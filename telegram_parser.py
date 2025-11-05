@@ -65,26 +65,20 @@ async def handler(event):
     except Exception as e:
         log.exception("Ошибка при обработке сообщения: %s", e)
 
-# Отправляем то же сообщение в мини-апп-бота
-import requests
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHAT_ID = MANAGER_ID  # можно отправлять самому менеджеру или в общий чат
-BOT_API = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+import os, requests, logging
+log = logging.getLogger(__name__)
 
-payload = {
-    "chat_id": CHAT_ID,
-    "text": f"/vacancy {chat_title}|{message_link}|{message_text}",
-}
-try:
-    requests.post(BOT_API, json=payload)
-except Exception as e:
-    log.warning("Не удалось отправить в мини-апп: %s", e)
+BOT_API = os.getenv("BOT_API", "http://localhost:8000/post")
 
-
-async def main():
-    await client.start()
-    log.info("👂 Парсер запущен и слушает чаты...")
-    await client.run_until_disconnected()
-
-if __name__ == "__main__":
-    asyncio.run(main())
+def send_to_miniapp(chat_title, message_text, message_link=None):
+    payload = {
+        "chat_title": chat_title,
+        "text": message_text,
+        "link": message_link,
+    }
+    try:
+        r = requests.post(BOT_API, json=payload, timeout=5)
+        if r.status_code != 200:
+            log.warning("miniapp returned %s: %s", r.status_code, r.text)
+    except Exception as e:
+        log.exception("Не удалось отправить в мини-апп: %s", e)
