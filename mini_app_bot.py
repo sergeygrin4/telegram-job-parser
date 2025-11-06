@@ -1,8 +1,8 @@
 import os
+import asyncio
 from aiohttp import web
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-from aiogram.utils import executor
 
 # Инициализация бота и диспетчера
 bot = Bot(token='7952407611:AAF_J8xFIE4FEL5Kmf6cFMUL0BZaEQsn_7s')
@@ -57,4 +57,12 @@ app.router.add_post('/add_link', add_link)  # Обработчик для /add_l
 # Запуск приложения на порту 8080 (или на порту, переданном через переменную окружения PORT)
 port = int(os.getenv("PORT", 8080))
 web.run_app(app, host="0.0.0.0", port=port)
+
+# Запуск бота с asyncio
+async def on_start():
+    await dp.start_polling()
+
+# Запускаем бота с использованием asyncio
+if __name__ == "__main__":
+    asyncio.run(on_start())
 
