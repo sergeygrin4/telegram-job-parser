@@ -15,11 +15,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Конфигурация
-BOT_TOKEN = os.getenv('BOT_TOKEN')
-MANAGER_CHAT_ID = os.getenv('MANAGER_CHAT_ID')
-SHARED_SECRET = os.getenv('SHARED_SECRET', 'your-secret-key')
+BOT_TOKEN = os.getenv('7952407611:AAF_J8xFIE4FEL5Kmf6cFMUL0BZaEQsn_7s')
+MANAGER_CHAT_ID = os.getenv('794618749')
+SHARED_SECRET = os.getenv('SHARED_SECRET', 'v04Ls7_UWsqb4XHQz9tYwtH6m2A0KHw4')
 PORT = int(os.getenv('PORT', 8000))
-WEB_APP_URL = os.getenv('WEB_APP_URL', 'https://your-app.railway.app')
+WEB_APP_URL = os.getenv('WEB_APP_URL', 'telegram-job-parser-production.up.railway.app')
 
 app = Flask(__name__, static_folder='static')
 CORS(app)
