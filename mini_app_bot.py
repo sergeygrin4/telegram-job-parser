@@ -6,7 +6,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.client import Application  # Правильный импорт для aiogram 3.x
 
 # Инициализация бота
-bot = Bot(token='YOUR_BOT_TOKEN')
+bot = Bot(token='7952407611:AAF_J8xFIE4FEL5Kmf6cFMUL0BZaEQsn_7s')
 
 # Инициализация Application (замена Dispatcher)
 app = Application(bot)
