@@ -1,71 +1,160 @@
 import os
+import logging
+from flask import Flask, request, jsonify, send_from_directory
+from flask_cors import CORS
+from telegram import Update, WebAppInfo
+from telegram.ext import Application, CommandHandler, ContextTypes
 import asyncio
-from aiohttp import web
-from aiogram import Bot, types
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-from aiogram.client import Application  # Правильный импорт для aiogram 3.x
+from threading import Thread
 
-# Инициализация бота
-bot = Bot(token='7952407611:AAF_J8xFIE4FEL5Kmf6cFMUL0BZaEQsn_7s')
+# Настройка логирования
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
-# Инициализация Application (замена Dispatcher)
-app = Application(bot)
+# Конфигурация
+BOT_TOKEN = os.getenv('BOT_TOKEN')
+MANAGER_CHAT_ID = os.getenv('MANAGER_CHAT_ID')
+SHARED_SECRET = os.getenv('SHARED_SECRET', 'your-secret-key')
+PORT = int(os.getenv('PORT', 8000))
+WEB_APP_URL = os.getenv('WEB_APP_URL', 'https://your-app.railway.app')
 
-# Обработчик для главной страницы (GET /)
-async def handle_root(request):
-    return web.Response(text="Добро пожаловать в Telegram Job Parser! Для начала выберите опцию.")
+app = Flask(__name__, static_folder='static')
+CORS(app)
 
-# Обработчик для POST /post (ваш текущий обработчик)
-async def handle_post(request):
-    data = await request.json()
-    chat_title = data.get("chat_title", "")
-    text = data.get("text", "")
-    # Ваш код для обработки POST-запроса
-    # Отправка сообщения в Telegram (например, по MANAGER_ID)
-    await bot.send_message(chat_id=MANAGER_ID, text=f"Вакансия: {chat_title}\n{text}")
-    return web.json_response({"status": "success"})
+# Глобальная переменная для бота
+bot_app = None
 
-# Обработчик для кнопки "Начать"
-@app.message_handler(commands=['start'])
-async def send_welcome(message: types.Message):
-    # Создаем кнопки
-    start_button = InlineKeyboardButton(text="Начать поиск", callback_data="start_search")
-    add_group_button = InlineKeyboardButton(text="Добавить сообщество", callback_data="add_group")
-
-    # Создаем клавиатуру с кнопками
-    keyboard = InlineKeyboardMarkup(row_width=2).add(start_button, add_group_button)
-
-    # Отправляем сообщение с кнопками
-    await bot.send_message(message.chat.id, "Добро пожаловать! Выберите опцию:", reply_markup=keyboard)
-
-# Обработчик для добавления ссылок (POST /add_link)
-async def add_link(request):
-    data = await request.json()
-    link = data.get("link")
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик команды /start с кнопкой для открытия мини-апа"""
+    keyboard = {
+        "inline_keyboard": [[
+            {
+                "text": "🔍 Открыть поиск вакансий",
+                "web_app": {"url": f"{WEB_APP_URL}/index.html"}
+            }
+        ]]
+    }
     
-    if link:
-        # Добавление ссылки в базу данных или список
-        return web.json_response({"status": "success", "message": f"Ссылка {link} добавлена"})
-    else:
-        return web.json_response({"status": "error", "message": "Нет ссылки"}, status=400)
+    await update.message.reply_text(
+        "👋 Привет! Нажми на кнопку ниже, чтобы открыть поиск вакансий:",
+        reply_markup=keyboard
+    )
 
-# Создание приложения и роутеров
-web_app = web.Application()
+async def send_telegram_message(chat_id: str, message: str):
+    """Отправка сообщения через Telegram бота"""
+    if bot_app and bot_app.bot:
+        try:
+            await bot_app.bot.send_message(
+                chat_id=chat_id,
+                text=message,
+                parse_mode='HTML'
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка отправки сообщения: {e}")
+            return False
+    return False
 
-# Роуты
-web_app.router.add_get('/', handle_root)  # Главная страница (GET /)
-web_app.router.add_post('/post', handle_post)  # Обработчик для /post
-web_app.router.add_post('/add_link', add_link)  # Обработчик для /add_link
+@app.route('/health', methods=['GET'])
+def health():
+    """Health check endpoint"""
+    return jsonify({"status": "ok", "service": "telegram-job-parser"})
 
-# Запуск приложения на порту 8080 (или на порту, переданном через переменную окружения PORT)
-port = int(os.getenv("PORT", 8080))
-web.run_app(web_app, host="0.0.0.0", port=port)
+@app.route('/post', methods=['POST'])
+def post_job():
+    """Endpoint для получения вакансий от парсера"""
+    # Проверка секретного ключа
+    secret = request.headers.get('X-SECRET')
+    if secret != SHARED_SECRET:
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    try:
+        data = request.json
+        chat_title = data.get('chat_title', 'Неизвестный канал')
+        text = data.get('text', '')
+        link = data.get('link', '')
+        
+        # Формирование сообщения для менеджера
+        message = f"📋 <b>Новая вакансия</b>\n\n"
+        message += f"📢 Канал: {chat_title}\n"
+        message += f"📝 Текст: {text}\n"
+        if link:
+            message += f"🔗 Ссылка: {link}\n"
+        
+        # Отправка сообщения
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        result = loop.run_until_complete(
+            send_telegram_message(MANAGER_CHAT_ID, message)
+        )
+        loop.close()
+        
+        if result:
+            return jsonify({"status": "success"}), 200
+        else:
+            return jsonify({"error": "Failed to send message"}), 500
+            
+    except Exception as e:
+        logger.error(f"Ошибка обработки запроса: {e}")
+        return jsonify({"error": str(e)}), 500
 
-# Запуск бота с использованием Application
-async def on_start():
-    await app.start_polling()
+@app.route('/')
+def root():
+    """Главная страница"""
+    return send_from_directory('static', 'index.html')
 
-# Запускаем бота с использованием asyncio
-if __name__ == "__main__":
-    asyncio.run(on_start())
+@app.route('/<path:path>')
+def static_files(path):
+    """Статические файлы"""
+    return send_from_directory('static', path)
 
+def run_flask():
+    """Запуск Flask сервера"""
+    app.run(host='0.0.0.0', port=PORT, debug=False)
+
+async def run_bot():
+    """Запуск Telegram бота"""
+    global bot_app
+    
+    bot_app = Application.builder().token(BOT_TOKEN).build()
+    
+    # Регистрация обработчиков
+    bot_app.add_handler(CommandHandler("start", start_command))
+    
+    # Запуск бота
+    await bot_app.initialize()
+    await bot_app.start()
+    logger.info("Бот запущен")
+    
+    # Держим бота активным
+    await bot_app.updater.start_polling()
+    await asyncio.Event().wait()
+
+def main():
+    """Главная функция запуска"""
+    if not BOT_TOKEN:
+        logger.error("BOT_TOKEN не установлен!")
+        return
+    
+    if not MANAGER_CHAT_ID:
+        logger.error("MANAGER_CHAT_ID не установлен!")
+        return
+    
+    logger.info(f"Запуск сервера на порту {PORT}")
+    logger.info(f"Web App URL: {WEB_APP_URL}")
+    
+    # Запуск Flask в отдельном потоке
+    flask_thread = Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+    
+    # Запуск бота
+    try:
+        asyncio.run(run_bot())
+    except KeyboardInterrupt:
+        logger.info("Остановка сервера...")
+
+if __name__ == '__main__':
+    main()
