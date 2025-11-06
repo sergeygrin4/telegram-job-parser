@@ -3,10 +3,10 @@ import asyncio
 from aiohttp import web
 from aiogram import Bot, types
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-from aiogram import Application
+from aiogram.client import Application  # Правильный импорт для aiogram 3.x
 
 # Инициализация бота
-bot = Bot(token='7952407611:AAF_J8xFIE4FEL5Kmf6cFMUL0BZaEQsn_7s')
+bot = Bot(token='YOUR_BOT_TOKEN')
 
 # Инициализация Application (замена Dispatcher)
 app = Application(bot)
@@ -68,5 +68,4 @@ async def on_start():
 # Запускаем бота с использованием asyncio
 if __name__ == "__main__":
     asyncio.run(on_start())
-
 
