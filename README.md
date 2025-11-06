@@ -6,10 +6,16 @@
 
 ## Быстрый старт локально
 
-```bash
 python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 cp .env.sample .env  # и заполнить
 python mini_app_bot.py  # web
 # в другой вкладке
 python telegram_parser.py  # worker
+
+Тестовый POST:
+
+curl -X POST http://localhost:8000/post \
+ -H "Content-Type: application/json" \
+ -H "X-SECRET: $SHARED_SECRET" \
+ -d '{"chat_title":"Канал вакансий","text":"Python dev, удалённо","link":"https://t.me/some/1"}'
