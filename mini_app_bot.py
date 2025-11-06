@@ -5,7 +5,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils import executor
 
 # Инициализация бота и диспетчера
-bot = Bot(token='YOUR_BOT_TOKEN')
+bot = Bot(token='7952407611:AAF_J8xFIE4FEL5Kmf6cFMUL0BZaEQsn_7s')
 dp = Dispatcher(bot)
 
 # Обработчик для главной страницы (GET /)
