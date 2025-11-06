@@ -1,84 +1,72 @@
+import os
 import asyncio
 import logging
-import os
-from telethon import TelegramClient, events
+import requests
 from dotenv import load_dotenv
+from telethon import TelegramClient, events
 
-# Загружаем переменные окружения
 load_dotenv()
-
-API_ID = int(os.getenv("TG_API_ID"))
-API_HASH = os.getenv("TG_API_HASH")
-MANAGER_ID = int(os.getenv("MANAGER_ID"))
-SESSION_NAME = os.getenv("SESSION_NAME", "job_parser")
-
-# Ключевые слова
-KEYWORDS = [
-    'вакансия','ищем','требуется','нужен','фриланс',
-    'we are hiring','job offer','open position'
-]
-
-# Список чатов (username или id)
-MONITORED_CHATS = [
-    # 'examplegroup',        # имя группы без @
-    # -1001234567890,        # id приватного чата
-]
-
 logging.basicConfig(level=logging.INFO)
-log = logging.getLogger("tg-parser")
+log = logging.getLogger("parser")
 
-client = TelegramClient(SESSION_NAME, API_ID, API_HASH)
-
-def has_keywords(text: str) -> bool:
-    if not text:
-        return False
-    text_lower = text.lower()
-    return any(k in text_lower for k in KEYWORDS)
-
-@client.on(events.NewMessage(incoming=True))
-async def handler(event):
-    try:
-        chat = await event.get_chat()
-        chat_id = event.chat_id
-        chat_title = getattr(chat, "title", "") or getattr(chat, "username", "")
-        message_text = event.message.message or ""
-
-        # Проверяем список чатов, если он указан
-        if MONITORED_CHATS and str(chat_id) not in map(str, MONITORED_CHATS) and \
-           getattr(chat, "username", "") not in MONITORED_CHATS:
-            return
-
-        if not has_keywords(message_text):
-            return
-
-        chat_id_stripped = str(chat_id).replace("-100", "")
-        message_link = f"https://t.me/c/{chat_id_stripped}/{event.message.id}"
-
-        text = (
-            f"🔔 Найдено сообщение в чате *{chat_title or 'без названия'}*\n\n"
-            f"{message_text}\n\n"
-            f"{message_link}"
-        )
-
-        await client.send_message(MANAGER_ID, text, link_preview=False, parse_mode='markdown')
-        log.info("✅ Сообщение отправлено менеджеру из чата: %s", chat_title)
-    except Exception as e:
-        log.exception("Ошибка при обработке сообщения: %s", e)
-
-import os, requests, logging
-log = logging.getLogger(__name__)
-
+API_ID = int(os.getenv("TELEGRAM_API_ID", "0"))
+API_HASH = os.getenv("TELEGRAM_API_HASH")
+SESSION_PATH = os.getenv("TELETHON_SESSION", "parser.session")
 BOT_API = os.getenv("BOT_API", "http://localhost:8000/post")
+CHANNELS = [c.strip() for c in os.getenv("CHANNELS", "").split(",") if c.strip()]
+SHARED_SECRET = os.getenv("SHARED_SECRET")
 
-def send_to_miniapp(chat_title, message_text, message_link=None):
-    payload = {
-        "chat_title": chat_title,
-        "text": message_text,
-        "link": message_link,
-    }
+if not API_ID or not API_HASH:
+    log.error("Не заданы TELEGRAM_API_ID/TELEGRAM_API_HASH.")
+    raise SystemExit(1)
+if not CHANNELS:
+    log.warning("Переменная CHANNELS пуста. Задай список каналов через запятую.")
+
+headers = {"X-SECRET": SHARED_SECRET} if SHARED_SECRET else {}
+
+client = TelegramClient(SESSION_PATH, API_ID, API_HASH)
+
+def _build_link(entity, message_id: int) -> str | None:
+    """
+    Пытаемся сформировать ссылку на сообщение.
+    Работает, если у канала есть username.
+    """
     try:
-        r = requests.post(BOT_API, json=payload, timeout=5)
+        username = getattr(entity, "username", None)
+        if username:
+            return f"https://t.me/{username}/{message_id}"
+    except Exception:
+        pass
+    return None
+
+def _post_to_miniapp(chat_title: str, text: str, link: str | None):
+    payload = {"chat_title": chat_title, "text": text, "link": link}
+    try:
+        r = requests.post(BOT_API, json=payload, headers=headers, timeout=8)
         if r.status_code != 200:
-            log.warning("miniapp returned %s: %s", r.status_code, r.text)
+            log.warning("miniapp %s: %s", r.status_code, r.text)
     except Exception as e:
-        log.exception("Не удалось отправить в мини-апп: %s", e)
+        log.exception("Ошибка POST в miniapp: %s", e)
+
+@client.on(events.NewMessage(chats=CHANNELS if CHANNELS else None))
+async def handler(event: events.NewMessage.Event):
+    try:
+        entity = await event.get_chat()
+        chat_title = getattr(entity, "title", getattr(entity, "username", "Канал"))
+        text = event.message.message or ""
+        if not text.strip():
+            return
+        link = _build_link(entity, event.message.id)
+        _post_to_miniapp(chat_title, text, link)
+        log.info("Отправлено: %s (%s)", chat_title, f"link={bool(link)}")
+    except Exception as e:
+        log.exception("Ошибка обработки сообщения: %s", e)
+
+async def main():
+    log.info("Запуск парсера. Каналы: %s", ", ".join(CHANNELS) if CHANNELS else "(все доступные чаты не подписываются)")
+    await client.start()
+    log.info("Telethon подключён.")
+    await client.run_until_disconnected()
+
+if __name__ == "__main__":
+    asyncio.run(main())
