@@ -1,12 +1,15 @@
 import os
 import asyncio
 from aiohttp import web
-from aiogram import Bot, Dispatcher, types
+from aiogram import Bot, types
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram import Application
 
-# Инициализация бота и диспетчера
+# Инициализация бота
 bot = Bot(token='7952407611:AAF_J8xFIE4FEL5Kmf6cFMUL0BZaEQsn_7s')
-dp = Dispatcher(bot)
+
+# Инициализация Application (замена Dispatcher)
+app = Application(bot)
 
 # Обработчик для главной страницы (GET /)
 async def handle_root(request):
@@ -23,7 +26,7 @@ async def handle_post(request):
     return web.json_response({"status": "success"})
 
 # Обработчик для кнопки "Начать"
-@dp.message_handler(commands=['start'])
+@app.message_handler(commands=['start'])
 async def send_welcome(message: types.Message):
     # Создаем кнопки
     start_button = InlineKeyboardButton(text="Начать поиск", callback_data="start_search")
@@ -47,22 +50,23 @@ async def add_link(request):
         return web.json_response({"status": "error", "message": "Нет ссылки"}, status=400)
 
 # Создание приложения и роутеров
-app = web.Application()
+web_app = web.Application()
 
 # Роуты
-app.router.add_get('/', handle_root)  # Главная страница (GET /)
-app.router.add_post('/post', handle_post)  # Обработчик для /post
-app.router.add_post('/add_link', add_link)  # Обработчик для /add_link
+web_app.router.add_get('/', handle_root)  # Главная страница (GET /)
+web_app.router.add_post('/post', handle_post)  # Обработчик для /post
+web_app.router.add_post('/add_link', add_link)  # Обработчик для /add_link
 
 # Запуск приложения на порту 8080 (или на порту, переданном через переменную окружения PORT)
 port = int(os.getenv("PORT", 8080))
-web.run_app(app, host="0.0.0.0", port=port)
+web.run_app(web_app, host="0.0.0.0", port=port)
 
-# Запуск бота с asyncio
+# Запуск бота с использованием Application
 async def on_start():
-    await dp.start_polling()
+    await app.start_polling()
 
 # Запускаем бота с использованием asyncio
 if __name__ == "__main__":
     asyncio.run(on_start())
+
 
